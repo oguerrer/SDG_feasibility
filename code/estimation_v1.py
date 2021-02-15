@@ -7,6 +7,9 @@ from joblib import Parallel, delayed
 import scipy.optimize as opt
 import time
 
+import cvxpy as cp
+
+
 
 home =  os.getcwd()[:-4]
 
@@ -115,6 +118,15 @@ def estimate_linear_all_nodes(T, A, R, phi, tau,
     
     return final_alphas, error
 
+def lambda_approx_func(lambdas,AA,z):
+    
+    temp = np.dot(lambdas,AA)
+    temp = 2*np.multiply(temp,lambdas)
+    
+    diff = np.linalg.norm(temp-z)
+    
+    return diff
+
 
 def approximate_markov_chain(alphas,T,A,B,beta,tau):
     
@@ -220,6 +232,7 @@ sample_size = 2
 parallel_processes = 2
 max_steps = 20
 
+methods = ['original', 'multivariate', 'approximation']
 method = 'multivariate' #'original' vs 'multivariate' vs 'approximation'
 
 countries = df.countryCode.unique()
@@ -227,130 +240,147 @@ np.random.shuffle(countries)
 
 countries = ['GNB']
 
+# Initialize dictionary to store the results
+method_comparison_results = {}
 
-for country in countries:
-    
-    starttime = time.time()
-    
-    done = [name for name in os.listdir(home+subfolder) if '.csv' in name]
-    
-    if country+'.csv' in done:
-        continue
-    else:
-        pass
-        #file = open(home+subfolder+country+'.csv', 'w')
-        #file.close()
-    
-    
-    dft = df[df.countryCode == country]
-    A = np.loadtxt(home+'/data/nets/A_'+country+'.csv', dtype=float, delimiter=",")  
-    phi = dft.gov_cc.mean()
-    tau = dft.gov_rl.mean()
-    series = dft[colYears].values
-    N = len(dft)
-    
-    # Build variables (gaps)
-    R = (dft.instrumental.values == 1).astype(int)
-    T = series[:,-1] - series[:,0]
-    T *= scalar
-    T[T<min_value] = (np.max(series[:,1::], axis=1) - series[:,0])[T<min_value]*scalar
-    T[T<min_value] = min_value
-    B = dft.budget.values[0]*num_years
-    
-    
-    # Global expenditure returns (homogeneous because we don't know expenditure amond indicators)
-    sc = series[:, 1::]-series[:, 0:-1] # get changes in indicators
-    scr = sc # isolate instrumentals
-    success_emp = np.sum(scr>0)/(scr.shape[0]*scr.shape[1]) # compute rate of success pooling data
-    
-    # Initial factors
-    est_alphas = np.ones(N)*.25
-    
-    
-    B_n = B/max_steps
-    
-    
-    error_beta = 10
-    error_alpha = 10
-    counter = 0
-    
-    best_error_beta = 10
-    best_error_alpha = 10
-    
-    best_alphas = est_alphas.copy()
-    best_beta = np.ones(N)
-    
-    
-    
-    while (error_alpha > tol_error_alpha or error_beta > tol_error_beta) and (counter < 10):
+for method in methods:
+
+
+    for country in countries:
         
-        print(country, 'finding alpha and beta...',)
+        starttime = time.time()
         
-        counter += 1
+        done = [name for name in os.listdir(home+subfolder) if '.csv' in name]
         
-        # second optimizaion of beta
-        sol = opt.minimize_scalar(run_4_scalar, args=(est_alphas, max_steps, success_emp), bounds=[0, 3], method='Bounded')
-        best_succs = sol.x
-        est_beta = best_succs / (B/(R.sum()*max_steps))
-        error_beta = sol.fun
+        if country+'.csv' in done:
+            continue
+        else:
+            pass
+            #file = open(home+subfolder+country+'.csv', 'w')
+            #file.close()
         
         
-        if method == 'original':
-            est_alphas, error_alpha = estimate_linear(T, A=A, R=R, phi=phi, tau=tau, alphas=est_alphas,
-                                              B=B_n, beta=est_beta, betas=np.ones(N)*est_beta,
-                                              sample_size=sample_size, 
-                                              parallel_processes=parallel_processes, max_steps=max_steps)
+        dft = df[df.countryCode == country]
+        A = np.loadtxt(home+'/data/nets/A_'+country+'.csv', dtype=float, delimiter=",")  
+        phi = dft.gov_cc.mean()
+        tau = dft.gov_rl.mean()
+        series = dft[colYears].values
+        N = len(dft)
         
-        elif method == 'multivariate':
+        # Build variables (gaps)
+        R = (dft.instrumental.values == 1).astype(int)
+        T = series[:,-1] - series[:,0]
+        T *= scalar
+        T[T<min_value] = (np.max(series[:,1::], axis=1) - series[:,0])[T<min_value]*scalar
+        T[T<min_value] = min_value
+        B = dft.budget.values[0]*num_years
+        
+        
+        # Global expenditure returns (homogeneous because we don't know expenditure amond indicators)
+        sc = series[:, 1::]-series[:, 0:-1] # get changes in indicators
+        scr = sc # isolate instrumentals
+        success_emp = np.sum(scr>0)/(scr.shape[0]*scr.shape[1]) # compute rate of success pooling data
+        
+        # Initial factors
+        est_alphas = np.ones(N)*.25
+        
+        
+        B_n = B/max_steps
+        
+        
+        error_beta = 10
+        error_alpha = 10
+        counter = 0
+        
+        best_error_beta = 10
+        best_error_alpha = 10
+        
+        best_alphas = est_alphas.copy()
+        best_beta = np.ones(N)
+        
+        
+        
+        while (error_alpha > tol_error_alpha or error_beta > tol_error_beta) and (counter < 10):
             
-            est_alphas, error_alpha = estimate_linear_all_nodes(T, A=A, R=R, phi=phi, tau=tau, alphas=est_alphas,
-                                              B=B_n, beta=est_beta, betas=np.ones(N)*est_beta,
-                                              sample_size=sample_size, 
-                                              parallel_processes=parallel_processes, max_steps=max_steps)
-        
-        
-        elif method == 'approximation':
+            print(country, 'finding alpha and beta...',)
             
-            est_alphas, error_alpha = estimate_approximation_all_nodes(T, A=A, R=R,
-                                            phi=phi, tau=tau, alphas=est_alphas,
-                            B=B_n, beta=est_beta, betas=np.ones(N)*est_beta,
-                       sample_size=sample_size, 
-                  parallel_processes=parallel_processes, max_steps=max_steps)
+            counter += 1
+            
+            # second optimizaion of beta
+            sol = opt.minimize_scalar(run_4_scalar, args=(est_alphas, max_steps, success_emp), bounds=[0, 3], method='Bounded')
+            best_succs = sol.x
+            est_beta = best_succs / (B/(R.sum()*max_steps))
+            error_beta = sol.fun
+            
+            
+            if method == 'original':
+                est_alphas, error_alpha = estimate_linear(T, A=A, R=R, phi=phi, tau=tau, alphas=est_alphas,
+                                                  B=B_n, beta=est_beta, betas=np.ones(N)*est_beta,
+                                                  sample_size=sample_size, 
+                                                  parallel_processes=parallel_processes, max_steps=max_steps)
+            
+            elif method == 'multivariate':
+                
+                est_alphas, error_alpha = estimate_linear_all_nodes(T, A=A, R=R, phi=phi, tau=tau, alphas=est_alphas,
+                                                  B=B_n, beta=est_beta, betas=np.ones(N)*est_beta,
+                                                  sample_size=sample_size, 
+                                                  parallel_processes=parallel_processes, max_steps=max_steps)
+            
+            
+            elif method == 'approximation':
+                
+                est_alphas, error_alpha = estimate_approximation_all_nodes(T, A=A, R=R,
+                                                phi=phi, tau=tau, alphas=est_alphas,
+                                B=B_n, beta=est_beta, betas=np.ones(N)*est_beta,
+                           sample_size=sample_size, 
+                      parallel_processes=parallel_processes, max_steps=max_steps)
+            
+            
+            
+            # evaluate errors of final estimates
+            evals = Parallel(n_jobs=parallel_processes, verbose=0)(delayed(run_ppi_parallel)(est_beta, est_alphas) for itera in range(sample_size*10))
+            eval_indis, eval_gammas = [], []
+            for evalu in evals:
+                eval_indis.append(evalu[0])
+                eval_gammas += evalu[1]
+            error_alpha = np.abs(np.mean(eval_indis, axis=0)-T).mean()
+            error_beta = abs(np.mean(eval_gammas) - success_emp)
+            
+            if error_alpha < best_error_alpha:
+                best_alphas = est_alphas
+                best_beta = est_beta
+                best_error_beta = error_beta
+                best_error_alpha = error_alpha
+            
+            print('beta error:', error_beta, )
+            print('alpha error:', error_alpha, )
+            print('counter:', counter)
+            print()
         
         
+        dfc = pd.DataFrame([[a, best_beta, max_steps, num_years, best_error_alpha, best_error_beta, scalar, min_value] for a in best_alphas], 
+                           columns=['alphas', 'beta', 'steps', 'years', 'error_alpha', 'error_beta', 'scalar', 'min_value'])
+        #dfc.to_csv(home+subfolder+country+'.csv', index=False)
         
-        # evaluate errors of final estimates
-        evals = Parallel(n_jobs=parallel_processes, verbose=0)(delayed(run_ppi_parallel)(est_beta, est_alphas) for itera in range(sample_size*10))
-        eval_indis, eval_gammas = [], []
-        for evalu in evals:
-            eval_indis.append(evalu[0])
-            eval_gammas += evalu[1]
-        error_alpha = np.abs(np.mean(eval_indis, axis=0)-T).mean()
-        error_beta = abs(np.mean(eval_gammas) - success_emp)
         
-        if error_alpha < best_error_alpha:
-            best_alphas = est_alphas
-            best_beta = est_beta
-            best_error_beta = error_beta
-            best_error_alpha = error_alpha
+        endtime = time.time()
+        time_elapsed = round(endtime-starttime,2)
+        print("Time elapsed for one country: {} seconds".format(time_elapsed))
         
-        print('beta error:', error_beta, )
-        print('alpha error:', error_alpha, )
-        print('counter:', counter)
-        print()
+    # Save results
+    method_comparison_results[method] = {'beta error': error_beta,
+                                         'alpha error': error_alpha,
+                                         'time_elapsed':time_elapsed}
     
     
-    dfc = pd.DataFrame([[a, best_beta, max_steps, num_years, best_error_alpha, best_error_beta, scalar, min_value] for a in best_alphas], 
-                       columns=['alphas', 'beta', 'steps', 'years', 'error_alpha', 'error_beta', 'scalar', 'min_value'])
-    #dfc.to_csv(home+subfolder+country+'.csv', index=False)
-    
-    
-    endtime = time.time()
-    time_elapsed = round(endtime-starttime,2)
-    print("Time elapsed for one country: {} seconds".format(time_elapsed))
 
 
 
+# Convert and Export method comparison results
+method_comparison_results = pd.DataFrame(method_comparison_results)
+
+
+method_comparison_results.to_csv('../method_comparison_results/method_comparison_results.csv')
     
     
     
@@ -364,15 +394,6 @@ bounds_all = [(0,1) for i in range(0,len(lambdas))]
 
 AA = np.random.rand(n,n)
 z = np.random.uniform(size=n)
-
-def lambda_approx_func(lambdas,AA,z):
-    
-    temp = np.dot(lambdas,AA)
-    temp = 2*np.multiply(temp,lambdas)
-    
-    diff = np.linalg.norm(temp-z)
-    
-    return diff
 
 
 
@@ -395,7 +416,54 @@ run_many_approximate_mc(best_alphas,T,A,B,best_beta,tau,sample_size)
 approximate_markov_chain(best_alphas,T,A,B,best_beta,tau)
 
 
+#### Try particle method
 
+# General parameters
+sampleSize = 2
+B=None
+bs=None
+betas=None
+beta=None
+parallel_processes=2
+max_steps=10
+
+# K iterations
+K = 20
+
+# Generate candidates
+candidate_alphas = [np.random.uniform(0,10,N) for i in range(K)]
+
+# Define current best
+x = candidate_alphas[0]
+
+# Initialize CVX parameters
+P = np.random.normal(size = (N,N))
+q = np.random.normal(size = N)
+r = np.random.normal(size = None)
+
+y = []
+
+# Evaluate function
+for alpha in candidate_alphas:
+
+    y.append(run_many_for_all_nodes(alphas, sampleSize, T, A, R, phi, tau,
+             B, bs, betas, beta, max_steps))
+    
+    
+# Define objective function
+def particle_obj(candidate_alphas,x,y,P,q,r):
+    
+    summa = 0
+    for i in range(0,len(candidate_alphas)):
+        diff = (candidate_alphas[i]-x)
+        summa += (diff.T@P@diff + \
+        q.T@diff + r - y[i])**2
+        
+    return summa
+
+
+# Try objective function
+particle_obj(candidate_alphas,x,y,P,q,r)
 
 
 
