@@ -1,6 +1,6 @@
 # Tasks
-* Full extensive analysis about what works and what not in the model: 500 pounds
-* Substantial improvement in code speed: 500 pounds
+* Extensive analysis about what works and what not in the model
+* Substantial improvement in code speed
 
 # Goals
 * Get a method that produces at least as accurate/precise results than the current method, but way more efficiently computationally
