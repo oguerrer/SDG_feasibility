@@ -15,11 +15,11 @@ home =  os.getcwd()[:-4]
 
 os.chdir(home+'/code/')
 from model_linear import *
+from candidate_algorithms import *
 
 
 
-
-def run_4_scalar(succs, alphas_t, max_steps, success):
+def run_4_scalar(succs, alphas_t, max_steps, success, B, R, parallel_processes, sample_size):
     beta_t = succs / (B/(R.sum()*max_steps))
     sols = Parallel(n_jobs=parallel_processes, verbose=0)(delayed(run_ppi_parallel)(beta_t, alphas_t) for itera in range(sample_size))
     gammas = []
@@ -117,6 +117,8 @@ def estimate_linear_all_nodes(T, A, R, phi, tau,
     error = np.abs(np.mean(final_values, axis=0) - T).mean()
     
     return final_alphas, error
+
+
 
 def lambda_approx_func(lambdas,AA,z):
     
@@ -307,7 +309,9 @@ for method in methods:
             counter += 1
             
             # second optimizaion of beta
-            sol = opt.minimize_scalar(run_4_scalar, args=(est_alphas, max_steps, success_emp), bounds=[0, 3], method='Bounded')
+            sol = opt.minimize_scalar(run_4_scalar, args=(est_alphas, max_steps,
+                                                          success_emp, B, R, parallel_processes, sample_size),
+                                                            bounds=[0, 3], method='Bounded')
             best_succs = sol.x
             est_beta = best_succs / (B/(R.sum()*max_steps))
             error_beta = sol.fun
@@ -381,89 +385,87 @@ method_comparison_results = pd.DataFrame(method_comparison_results)
 
 
 method_comparison_results.to_csv('../method_comparison_results/method_comparison_results.csv')
+
+
+
+
+
+
+
+# =============================================================================
+# # Experiment with Markov-chain approach
+# 
+# 
+# n = 10
+# lambdas = np.random.uniform(size=n)
+# 
+# bounds_all = [(0,1) for i in range(0,len(lambdas))]
+# 
+# AA = np.random.rand(n,n)
+# z = np.random.uniform(size=n)
+# 
+# 
+# 
+# # Solve the problem
+# sol = opt.minimize(lambda_approx_func, args=(AA,z),x0 = lambdas,
+#     bounds=bounds_all, method='COBYLA')
+# 
+# # Print optimal lambdas
+# print(sol.x)
+# 
+# # Get residual value
+# print(sol.fun)
+# 
+# 
+# # TRY new functions
+# run_many_approximate_mc(best_alphas,T,A,B,best_beta,tau,sample_size)
+# 
+# 
+# 
+# approximate_markov_chain(best_alphas,T,A,B,best_beta,tau)
+# 
+# 
+# #### Try particle method
+# 
+# # General parameters
+# sampleSize = 2
+# B=None
+# bs=None
+# betas=None
+# beta=None
+# parallel_processes=2
+# max_steps=10
+# 
+# # K iterations
+# K = 20
+# 
+# # Generate candidates
+# candidate_alphas = [np.random.uniform(0,10,N) for i in range(K)]
+# 
+# # Define current best
+# x = candidate_alphas[0]
+# 
+# # Initialize CVX parameters
+# P = np.random.normal(size = (N,N))
+# q = np.random.normal(size = N)
+# r = np.random.normal(size = None)
+# 
+# y = []
+# 
+# # Evaluate function
+# for alpha in candidate_alphas:
+# 
+#     y.append(run_many_for_all_nodes(alphas, sampleSize, T, A, R, phi, tau,
+#              B, bs, betas, beta, max_steps))
+# 
+# 
+# # Try objective function
+# particle_obj(candidate_alphas,x,y,P,q,r)
+# =============================================================================
     
     
     
-# Experiment with Markov-chain approach
 
-
-n = 10
-lambdas = np.random.uniform(size=n)
-
-bounds_all = [(0,1) for i in range(0,len(lambdas))]
-
-AA = np.random.rand(n,n)
-z = np.random.uniform(size=n)
-
-
-
-# Solve the problem
-sol = opt.minimize(lambda_approx_func, args=(AA,z),x0 = lambdas,
-    bounds=bounds_all, method='COBYLA')
-
-# Print optimal lambdas
-print(sol.x)
-
-# Get residual value
-print(sol.fun)
-
-
-# TRY new functions
-run_many_approximate_mc(best_alphas,T,A,B,best_beta,tau,sample_size)
-
-
-
-approximate_markov_chain(best_alphas,T,A,B,best_beta,tau)
-
-
-#### Try particle method
-
-# General parameters
-sampleSize = 2
-B=None
-bs=None
-betas=None
-beta=None
-parallel_processes=2
-max_steps=10
-
-# K iterations
-K = 20
-
-# Generate candidates
-candidate_alphas = [np.random.uniform(0,10,N) for i in range(K)]
-
-# Define current best
-x = candidate_alphas[0]
-
-# Initialize CVX parameters
-P = np.random.normal(size = (N,N))
-q = np.random.normal(size = N)
-r = np.random.normal(size = None)
-
-y = []
-
-# Evaluate function
-for alpha in candidate_alphas:
-
-    y.append(run_many_for_all_nodes(alphas, sampleSize, T, A, R, phi, tau,
-             B, bs, betas, beta, max_steps))
-    
-    
-# Define objective function
-def particle_obj(candidate_alphas,x,y,P,q,r):
-    
-    summa = 0
-    for i in range(0,len(candidate_alphas)):
-        diff = (candidate_alphas[i]-x)
-        summa += (diff.T@P@diff + \
-        q.T@diff + r - y[i])**2
-        
-    return summa
-
-
-# Try objective function
-particle_obj(candidate_alphas,x,y,P,q,r)
 
 
 

@@ -21,3 +21,16 @@ home =  os.getcwd()[:-4]
 
 os.chdir(home+'/code/')
 from model_linear import *
+
+
+# Define objective function for particle method
+def particle_obj(candidate_alphas,x,y,P,q,r):
+    
+    summa = 0
+    for i in range(0,len(candidate_alphas)):
+        diff = (candidate_alphas[i]-x)
+        summa += (diff.T@P@diff + \
+        q.T@diff + r - y[i])**2
+        
+    return summa
+
