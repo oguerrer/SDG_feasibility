@@ -20,7 +20,7 @@
 * Evolutionary approach / Genetic algorithms
 * Greedy heuristic search / Ceteris paribus partial optimization approach
   * This works best currently
-* **Approximate Markov-chain methods / Linear dynamical systemts approximation **
+* Approximate Markov-chain methods / Linear dynamical systemts approximation
   * This seems to give a really poor approximation and not too fast either
 * Scipy multivariate nonlinear optimization
   * Seems to be fast (3x) but less accurate
