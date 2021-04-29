@@ -252,7 +252,6 @@ def run_ppi(I0, G=None, A=None, alpha=.1, cc=.5, rl=.5, R=None, PF=None, B=None,
             assert np.sum(np.isnan(P0)) == 0, 'P0 has invalid values!'
             assert np.sum(P0==0) == 0, 'P0 has a zero value!'
             q = P0/P0.sum()
-            q = P/P.sum()
             assert np.sum(np.isnan(q)) == 0, 'q has invalid values!'
             qs_hat = q**bs
             P = B*qs_hat/qs_hat.sum()
